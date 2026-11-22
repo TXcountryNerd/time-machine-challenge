@@ -54,7 +54,7 @@ node tests/recaps.test.js
 GitHub Pages lets phones cache files for about 10 minutes. Every file reference carries a version number (`?v=6`) so players get the new code together. When you change any JS, CSS or player data, bump the number everywhere before you push:
 
 ```sh
-sed -i 's/?v=5/?v=6/g' index.html js/*.js
+sed -i 's/?v=6/?v=7/g' index.html js/*.js
 ```
 
 ## Editing player ratings
