@@ -124,8 +124,8 @@ export function chemistry(team, E) {
   const s = starters(team);
   const notes = [];
   let v = 0;
-  const alphas = s.filter((c) => c.usage >= 88).length;
-  if (alphas > 2) { v -= (alphas - 2) * 1.2; notes.push(`${alphas} ball-dominant stars, one basketball`); }
+  const alphas = s.filter((c) => c.usage >= 94).length; // true ball-dominant stars
+  if (alphas > 2) { v -= (alphas - 2) * 1.0; notes.push(`${alphas} ball-dominant stars, one basketball`); }
   if (max(s.map((c) => c.usage)) < 80) { v -= 1.5; notes.push('no go-to scorer'); }
   if (max(s.map((c) => c.play)) < 82) { v -= 1.5; notes.push('no true playmaker'); }
   const shooters = s.filter((c) => c.three >= 78).length;
@@ -396,24 +396,32 @@ export function simSeries(teamA, teamB, era, plans, seed, opts = {}) {
   const opening = planFor(1, []);
   const seedTeam = opts.higherSeed ?? higherSeed(teamA, teamB, era, opening, opts.tiebreak ?? 'A');
   const games = [];
-  const wins = { A: 0, B: 0 };
-  let prev = opening;
-  for (let n = 1; wins.A < 4 && wins.B < 4; n++) {
-    const p = n === 1 ? opening : planFor(n, games);
-    const g = simGame(teamA, teamB, era, p, `${seed}-g${n}`, { home: homeFor(n, seedTeam) });
-    g.n = n;
-    g.plans = p;
-    // Adjustment paid off: winner changed a lever after losing the previous game
-    const last = games[games.length - 1];
-    if (last && last.winner !== g.winner && LEVERS.some((l) => p[g.winner][l] !== prev[g.winner][l])) {
-      g.tags.push('adjustment-paid-off');
-    }
-    wins[g.winner]++;
-    g.seriesAfter = { ...wins };
-    games.push(g);
-    prev = p;
+  while (!seriesOver(games)) {
+    const p = games.length === 0 ? opening : planFor(games.length + 1, games);
+    games.push(playGame(teamA, teamB, era, games, p, seed, seedTeam));
   }
   return summarizeSeries(teamA, teamB, era, games, seed, seedTeam);
+}
+
+export function seriesOver(games) {
+  const w = games.length ? games[games.length - 1].seriesAfter : { A: 0, B: 0 };
+  return w.A >= 4 || w.B >= 4;
+}
+
+/** Play the next game of a series (used by simSeries and by the game-by-game UI). */
+export function playGame(teamA, teamB, era, games, plans, seed, seedTeam) {
+  const n = games.length + 1;
+  const g = simGame(teamA, teamB, era, plans, `${seed}-g${n}`, { home: homeFor(n, seedTeam) });
+  g.n = n;
+  g.plans = { A: { ...plans.A }, B: { ...plans.B } };
+  const last = games[games.length - 1];
+  // Adjustment paid off: the team that lost last game changed a lever and won this one
+  if (last && last.winner !== g.winner && LEVERS.some((l) => plans[g.winner][l] !== last.plans[g.winner][l])) {
+    g.tags.push('adjustment-paid-off');
+  }
+  const prev = last ? last.seriesAfter : { A: 0, B: 0 };
+  g.seriesAfter = { ...prev, [g.winner]: prev[g.winner] + 1 };
+  return g;
 }
 
 export function summarizeSeries(teamA, teamB, era, games, seed, seedTeam) {
@@ -510,4 +518,15 @@ export function bestPlan(team, opp, E, oppPlan, start = defaultPlan(team)) {
     }
   }
   return plan;
+}
+
+// ---------- Draft grade ----------
+// Cutoffs from the rosterScore distribution of 6,000 mock-drafted rosters (p95, p90, p80 ...).
+const DRAFT_CUTOFFS = [[96.1, 'A+'], [95.6, 'A'], [95.1, 'A-'], [94.5, 'B+'], [94.0, 'B'], [93.4, 'B-'], [92.8, 'C+'], [92.3, 'C'], [91.8, 'C-'], [90.9, 'D']];
+export function draftGrade(team) {
+  const score = rosterScore(team);
+  const grade = (DRAFT_CUTOFFS.find(([c]) => score >= c) ?? [0, 'F'])[1];
+  const byEra = ERAS.map((E) => ({ era: E, value: talent(team, E) + chemistry(team, E).value, chem: chemistry(team, E) }));
+  byEra.sort((a, b) => b.value - a.value);
+  return { score, grade, bestEra: byEra[0].era, worstEra: byEra[byEra.length - 1].era, notes: chemistry(team, byEra[0].era).notes };
 }
