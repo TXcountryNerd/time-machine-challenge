@@ -28,6 +28,101 @@ function loadSettings() { try { return JSON.parse(localStorage.getItem(SETTINGS_
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* private mode */ } }
 const settings = { mode: 'cpu', level: 'normal', timer: 30, nameA: '', nameB: '', ...loadSettings() };
 
+// ---------- Rivalry record (localStorage, this device) ----------
+const RIVAL_KEY = 'tmc.rivalry';
+function loadRivalry() { try { return JSON.parse(localStorage.getItem(RIVAL_KEY)) ?? {}; } catch { return {}; } }
+function saveRivalry(all) { try { localStorage.setItem(RIVAL_KEY, JSON.stringify(all)); } catch { /* private mode */ } }
+const norm = (s) => s.trim().toLowerCase();
+const rivalKey = (names) => [norm(names.A), norm(names.B)].sort().join('|');
+const getRivalry = (names) => loadRivalry()[rivalKey(names)] ?? null;
+function recordRivalry(names, winnerSide, result, era) {
+  const all = loadRivalry();
+  const k = rivalKey(names);
+  const r = all[k] ?? { names: {}, wins: {}, finals: 0 };
+  for (const s of ['A', 'B']) { r.names[norm(names[s])] = names[s]; r.wins[norm(names[s])] ??= 0; }
+  r.wins[norm(names[winnerSide])]++;
+  r.finals++;
+  r.last = { winner: names[winnerSide], result, era, at: Date.now() };
+  all[k] = r;
+  saveRivalry(all);
+  return r;
+}
+const rivalryText = (r, a, b) => `${a} ${r.wins[norm(a)] ?? 0} – ${b} ${r.wins[norm(b)] ?? 0}`;
+
+// ---------- Challenge link (rosters + era + plans + seed in the URL hash) ----------
+const b64e = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64d = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (ch) => ch.charCodeAt(0)));
+function planCode(t, p) {
+  const roster = allOf(t);
+  return [Sim.OFFENSES.indexOf(p.offense), Sim.DEFENSES.indexOf(p.defense), Sim.TEMPOS.indexOf(p.tempo), Sim.ROTATIONS.indexOf(p.rotation),
+    roster.findIndex((c) => c.id === p.primary), roster.findIndex((c) => c.id === p.stopper)].join('');
+}
+function planDecode(t, code) {
+  const d = [...code].map(Number);
+  const roster = allOf(t);
+  const plan = { offense: Sim.OFFENSES[d[0]], defense: Sim.DEFENSES[d[1]], tempo: Sim.TEMPOS[d[2]], rotation: Sim.ROTATIONS[d[3]], primary: roster[d[4]]?.id, stopper: roster[d[5]]?.id };
+  if (Object.values(plan).some((v) => !v)) throw new Error('bad plan');
+  return plan;
+}
+function challengeURL() {
+  const payload = {
+    v: 1, n: [S.names.A, S.names.B], m: S.mode, l: S.level, e: S.era, s: S.seed, h: S.seedTeam,
+    r: ['A', 'B'].map((s) => allOf(team(s)).map((c) => c.id)),
+    g: S.games.map((g) => [planCode(team('A'), g.plans.A), planCode(team('B'), g.plans.B)]),
+  };
+  return `${location.origin}${location.pathname}#c=${b64e(JSON.stringify(payload))}`;
+}
+function parseChallenge(hash) {
+  try {
+    const p = JSON.parse(b64d(hash.replace(/^#c=/, '')));
+    if (p.v !== 1 || !ERAS.includes(p.e) || !['A', 'B'].includes(p.h)) return null;
+    const mk = (ids, name) => {
+      const cs = ids.map((id) => DB.byId.get(id));
+      if (cs.length !== 7 || cs.some((c) => !c)) throw new Error('unknown card');
+      const t = { name, starters: Object.fromEntries(cs.slice(0, 5).map((c) => [c.pos, c])), bench: cs.slice(5) };
+      if (POSITIONS.some((pos) => !t.starters[pos])) throw new Error('bad lineup');
+      return t;
+    };
+    const teams = { A: mk(p.r[0], p.n[0]), B: mk(p.r[1], p.n[1]) };
+    const gamePlans = p.g.map(([a, b]) => ({ A: planDecode(teams.A, a), B: planDecode(teams.B, b) }));
+    if (!gamePlans.length) return null;
+    return { names: { A: String(p.n[0]).slice(0, 14), B: String(p.n[1]).slice(0, 14) }, mode: p.m, level: p.l, era: p.e, seed: String(p.s), seedTeam: p.h, teams, gamePlans };
+  } catch { return null; }
+}
+const clearHash = () => { if (location.hash) history.replaceState(null, '', location.pathname + location.search); };
+
+// ---------- Arcade FX ----------
+function stamp(text, kind = '') {
+  const el = document.createElement('div');
+  el.className = `stamp ${kind}`;
+  el.textContent = text;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1200);
+}
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas');
+  cv.className = 'confetti';
+  document.body.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const W = (cv.width = innerWidth), H = (cv.height = innerHeight);
+  const colors = ['#ee7a2b', '#2ef2ff', '#ff3ea5', '#ffe14d', '#7dff4a', '#b57bff'];
+  const bits = Array.from({ length: 160 }, () => ({
+    x: Math.random() * W, y: -20 - Math.random() * H * 0.5, vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 3,
+    s: 5 + Math.random() * 6, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3, c: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const t0 = performance.now();
+  const frame = (now) => {
+    ctx.clearRect(0, 0, W, H);
+    for (const b of bits) {
+      b.x += b.vx; b.y += b.vy; b.vy += 0.04; b.r += b.vr;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.c; ctx.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2); ctx.restore();
+    }
+    if (now - t0 < 3200) requestAnimationFrame(frame); else cv.remove();
+  };
+  requestAnimationFrame(frame);
+}
+
 // ---------- Helpers ----------
 const other = (side) => (side === 'A' ? 'B' : 'A');
 const isHuman = (side) => S.mode === 'pvp' || side === 'A';
@@ -53,13 +148,15 @@ function toast(msg) {
 }
 
 // ---------- Card views ----------
+const STAT_PILLS = [['three', '3PT'], ['def', 'DEF'], ['play', 'PLY'], ['inside', 'INS'], ['rebounding', 'REB'], ['clutch', 'CLU']];
+const tier = (v) => (v >= 90 ? 't1' : v >= 80 ? 't2' : v >= 65 ? 't3' : 't4');
 function cardHTML(c, { act = '', sel = false, disabled = false, compact = false, note = '' } = {}) {
   return `<button class="pcard pos-${c.pos} ${sel ? 'sel' : ''} ${compact ? 'compact' : ''}" ${act ? `data-act="${act}" data-id="${c.id}"` : ''} ${disabled ? 'disabled' : ''}>
     <span class="jersey"><span class="jnum">${c.ovr}</span><span class="jpos">${c.pos}</span></span>
     <span class="pinfo">
       <span class="pname">${esc(c.name)}</span>
       <span class="pmeta"><span class="era-badge era-${c.era}">${ERA_SHORT[c.era]}</span>${note ? `<span class="pnote">${note}</span>` : ''}</span>
-      ${compact ? '' : `<span class="pattrs"><b>3PT</b>${c.three} <b>DEF</b>${c.def} <b>PLY</b>${c.play} <b>INS</b>${c.inside} <b>REB</b>${c.rebounding} <b>CLU</b>${c.clutch}</span>`}
+      ${compact ? '' : `<span class="pstats">${STAT_PILLS.map(([k, l]) => `<span class="st ${tier(c[k])}"><b>${l}</b>${c[k]}</span>`).join('')}</span>`}
     </span></button>`;
 }
 
@@ -88,7 +185,7 @@ function render() {
   if (S?.handoff) { $app.innerHTML = viewHandoff(); return; }
   const screen = S ? S.screen : 'mode';
   $app.innerHTML = VIEWS[screen]();
-  if (screen !== lastScreen) { window.scrollTo(0, 0); lastScreen = screen; }
+  if (screen !== lastScreen) { window.scrollTo(0, 0); lastScreen = screen; $app.firstElementChild?.classList.add('enter'); }
   if (screen === 'draft') updateTimerBar();
 }
 
@@ -125,8 +222,25 @@ function viewMode() {
       <h3>Pick timer</h3>
       <div class="chips">${[30, 60, 0].map((t) => chip('setTimer', t, t ? `${t}s` : 'Off', s.timer === t)).join('')}</div>
     </section>
+    ${rivalryBoard()}
+    <p class="press-start">▶ PRESS TIP OFF ◀</p>
     <div class="dock"><button class="btn primary big" data-act="start">Tip off</button></div>
   </div>`;
+}
+
+function rivalryBoard() {
+  const rows = Object.values(loadRivalry()).sort((a, b) => (b.last?.at ?? 0) - (a.last?.at ?? 0)).slice(0, 6);
+  if (!rows.length) return '';
+  return `<section class="panel rivalry">
+    <h3>Rivalry board</h3>
+    ${rows.map((r) => {
+      const [a, b] = Object.values(r.names);
+      const wa = r.wins[norm(a)] ?? 0, wb = r.wins[norm(b)] ?? 0;
+      return `<div class="riv-row"><span class="riv-name ${wa > wb ? 'lead' : ''}">${esc(a)}</span><span class="riv-score">${wa}<i>–</i>${wb}</span><span class="riv-name ${wb > wa ? 'lead' : ''}">${esc(b)}</span></div>
+        ${r.last ? `<p class="riv-last">Last: ${esc(r.last.winner)} won ${esc(r.last.result)} in the ${ERA_SHORT[r.last.era] ?? ''}</p>` : ''}`;
+    }).join('')}
+    <button class="btn small ghost" data-act="resetRivalry">Reset records</button>
+  </section>`;
 }
 
 function newGame() {
@@ -275,6 +389,7 @@ function cpuTurn() {
       D.reroll[side] = true;
       D.slot = deal(side, D.slot);
       toast(`${nm(side)} used its re-roll`);
+      stamp('RE-ROLL!');
       render();
       later(800, () => makePick(side, CPU.choosePick(S.level, cpuCtx(side))));
       return;
@@ -326,6 +441,7 @@ function doVeto(vetoer, side, c) {
   const D = S.draft;
   clearTimers();
   D.veto[vetoer] = true;
+  stamp('VETOED!', 'bad');
   unplace(side, c);
   D.blocked.add(c.playerId);
   D.pending = null;
@@ -540,9 +656,10 @@ function startFinals() {
   S.screen = 'finals';
   S.games = [];
   S.usedRecaps = new Set();
-  S.seedTeam = Sim.higherSeed(team('A'), team('B'), S.era, S.plans, S.coinWinner);
+  S.seedTeam = S.forceSeedTeam ?? Sim.higherSeed(team('A'), team('B'), S.era, S.plans, S.coinWinner);
   S.fin = { stage: 'pre' };
-  if (S.mode === 'pvp') handoff('A', `Game plans are locked. Gather round for Game 1 — ${nm(S.seedTeam)} has home court.`, () => {});
+  S.recorded = false;
+  if (S.mode === 'pvp' && !S.replay) handoff('A', `Game plans are locked. Gather round for Game 1 — ${nm(S.seedTeam)} has home court.`, () => {});
   else render();
 }
 function playNext() {
@@ -604,11 +721,13 @@ function viewFinals() {
         <p><b>${esc(nm('A'))}</b>: ${planSummary(team('A'), g.plans.A)}</p><p><b>${esc(nm('B'))}</b>: ${planSummary(team('B'), g.plans.B)}</p></details>
       <div class="dock ${over ? '' : 'row2'}">${over
         ? '<button class="btn primary big" data-act="toResults">Series over — see results</button>'
-        : `<button class="btn" data-act="simEnd">Sim to end</button><button class="btn primary" data-act="toAdjust">Adjust & Game ${g.n + 1}</button>`}</div>`;
+        : `<button class="btn" data-act="simEnd">Sim to end</button>${S.replay
+          ? `<button class="btn primary" data-act="replayNext">Game ${g.n + 1} ▶</button>`
+          : `<button class="btn primary" data-act="toAdjust">Adjust & Game ${g.n + 1}</button>`}`}</div>`;
   } else if (F.stage === 'adjust') {
     body = viewAdjust();
   }
-  return `<div class="screen">${topBar(`The Finals · ${ERA_SHORT[S.era]}`)}${header}<div class="pad">${body}</div></div>`;
+  return `<div class="screen">${topBar(`${S.replay ? 'Replay' : 'The Finals'} · ${ERA_SHORT[S.era]}`)}${header}<div class="pad">${body}</div></div>`;
 }
 
 function animateGame(g, onDone) {
@@ -626,7 +745,7 @@ function animateGame(g, onDone) {
     const to = cum(qi);
     const ql = document.getElementById('sb-q');
     if (ql) ql.textContent = qi < 4 ? `Q${qi + 1}` : 'OT';
-    if (qi >= 4) { document.querySelectorAll(`.otc${qi}`).forEach((el) => (el.style.display = '')); haptic(30); }
+    if (qi >= 4) { document.querySelectorAll(`.otc${qi}`).forEach((el) => (el.style.display = '')); haptic(30); if (qi === 4) stamp('OVERTIME!'); }
     const t0 = performance.now();
     const dur = qi === 3 ? 1300 : 800;
     const frame = (now) => {
@@ -688,16 +807,34 @@ function viewAdjust() {
     <div class="dock row2"><button class="btn" data-act="adjKeep">Keep plan</button><button class="btn primary" data-act="adjSave" ${F.adjLever && F.adjValue && F.adjValue !== p[F.adjLever] ? '' : 'disabled'}>Make the change</button></div>`;
 }
 
+// Replays use the plans recorded in the challenge link, game by game.
+function replayPlansFor(n) { return S.replayPlans[Math.min(n - 1, S.replayPlans.length - 1)]; }
+
 function simToEnd() {
   clearTimers();
-  if (S.fin.stage === 'post') cpuAdjust();
+  if (S.fin.stage === 'post' && !S.replay) cpuAdjust();
   while (!Sim.seriesOver(S.games)) {
+    if (S.replay) S.plans = replayPlansFor(S.games.length + 1);
     playNext();
-    if (!Sim.seriesOver(S.games)) cpuAdjust();
+    if (!Sim.seriesOver(S.games) && !S.replay) cpuAdjust();
+  }
+  finishSeries();
+}
+
+function finishSeries() {
+  clearTimers();
+  const last = S.games.at(-1);
+  const w = last.seriesAfter.A === 4 ? 'A' : 'B';
+  if (!S.replay && !S.recorded) {
+    const res = `${Math.max(last.seriesAfter.A, last.seriesAfter.B)}–${Math.min(last.seriesAfter.A, last.seriesAfter.B)}`;
+    S.rivalry = recordRivalry(S.names, w, res, S.era);
+    S.recorded = true;
   }
   S.screen = 'results';
-  haptic(40);
+  haptic(60);
   render();
+  stamp(S.mode === 'cpu' && !S.replay ? (w === 'A' ? 'CHAMPIONS!' : 'GAME OVER') : 'CHAMPIONS!', w === 'A' || S.mode !== 'cpu' ? 'good' : 'bad');
+  if (S.mode !== 'cpu' || w === 'A' || S.replay) confetti();
 }
 
 // ---------- RESULTS ----------
@@ -715,7 +852,9 @@ function viewResults() {
     <p class="hint">Game 1 plan graded against roster, era and opponent. Adjustments made: ${adjCount(side)}.</p></div>`;
   const tp = S.games[r.turningPoint - 1];
   return `<div class="screen">${topBar('Finals results')}<div class="pad">
-    <div class="champ"><div class="trophy">🏆</div><h2>${esc(nm(w))} won the ${ERA_SHORT[S.era]} Finals</h2><p class="lead">${r.result}</p></div>
+    <div class="champ"><div class="trophy">🏆</div><h2>${esc(nm(w))} won the ${ERA_SHORT[S.era]} Finals</h2><p class="lead">${r.result}</p>
+      ${S.replay ? '<p class="hint">Replay of a shared challenge. Same rosters, plans and seed, same result.</p>' : ''}
+      ${!S.replay && (S.rivalry ?? getRivalry(S.names)) ? `<div class="riv-banner"><span class="tag">ALL-TIME</span> ${esc(rivalryText(S.rivalry ?? getRivalry(S.names), nm('A'), nm('B')))}</div>` : ''}</div>
     <div class="mvp"><span class="tag">FINALS MVP</span><b>${esc(r.mvp.name)}</b> ${r.mvp.pts} pts · ${r.mvp.reb} reb · ${r.mvp.ast} ast</div>
     <p><b>Turning point:</b> Game ${tp.n} — ${esc(tp.recap.line)}</p>
     <h3>Game by game</h3>
@@ -724,14 +863,46 @@ function viewResults() {
     <h3>${esc(nm('A'))} — series averages</h3>${avgTable('A')}
     <h3>${esc(nm('B'))} — series averages</h3>${avgTable('B')}
     <p class="hint">Seed <code>${esc(S.seed)}</code></p>
+    <button class="btn ghost share" data-act="share">🔗 Share challenge link</button>
+    <p class="hint">The link carries both rosters, the era, every game plan and the seed, so anyone can replay this exact Finals or try to out-coach it.</p>
     <div class="dock col">
-      <button class="btn primary big" data-act="rematch">Rematch — same rosters, new seed</button>
-      <div class="row2"><button class="btn" data-act="swapSides">Swap sides (new draft)</button><button class="btn" data-act="home">Main menu</button></div>
+      ${S.replay
+        ? '<button class="btn primary big" data-act="runBack" data-v="cpu">Run it back — coach it yourself</button><div class="row2"><button class="btn" data-act="runBack" data-v="pvp">Run it back (2 players)</button><button class="btn" data-act="home">Main menu</button></div>'
+        : '<button class="btn primary big" data-act="rematch">Rematch — same rosters, new seed</button><div class="row2"><button class="btn" data-act="swapSides">Swap sides (new draft)</button><button class="btn" data-act="home">Main menu</button></div>'}
     </div>
   </div></div>`;
 }
 
-const VIEWS = { mode: viewMode, coin: viewCoin, draft: viewDraft, trade: viewTrade, grade: viewGrade, era: viewEra, plan: viewPlan, finals: viewFinals, results: viewResults };
+// ---------- CHALLENGE (opened from a shared link) ----------
+function viewChallenge() {
+  const C = S.challenge;
+  return `<div class="screen">${topBar('Challenge')}
+    <div class="pad">
+      <div class="challenge-head"><span class="tag">CHALLENGE LINK</span>
+        <h2>${esc(C.names.A)} <span class="vs-x">vs</span> ${esc(C.names.B)}</h2>
+        <p class="lead">The <span class="era-badge era-${C.era}">${ERA_SHORT[C.era]}</span> Finals · ${C.gamePlans.length} games played</p>
+      </div>
+    </div>
+    <div class="sticky-rosters static">${miniRoster('A')}${miniRoster('B')}</div>
+    <div class="pad">
+      <p class="hint">Both rosters, the era, every game plan and the dice (seed ${esc(C.seed)}) are in this link. Watch it play out exactly as it happened, or take over and try to coach a better result with the same dice.</p>
+      <div class="col">
+        <button class="btn primary big" data-act="replayStart">▶ Watch the replay</button>
+        <button class="btn big" data-act="runBack" data-v="cpu">Coach ${esc(C.names.A)} vs CPU Legend</button>
+        <button class="btn" data-act="runBack" data-v="pvp">Coach it, 2 players</button>
+        <button class="btn ghost" data-act="home">Main menu</button>
+      </div>
+    </div></div>`;
+}
+
+const VIEWS = { mode: viewMode, coin: viewCoin, draft: viewDraft, trade: viewTrade, grade: viewGrade, era: viewEra, plan: viewPlan, finals: viewFinals, results: viewResults, challenge: viewChallenge };
+
+function challengeState(C) {
+  return {
+    screen: 'challenge', mode: C.mode === 'pvp' ? 'pvp' : 'cpu', level: CPU.LEVELS.includes(C.level) ? C.level : 'normal', timer: settings.timer,
+    names: { ...C.names }, seed: C.seed, era: C.era, teams: { A: C.teams.A, B: C.teams.B }, eraControl: null, forceSeedTeam: C.seedTeam, challenge: C,
+  };
+}
 
 // ---------- Actions ----------
 const A = {
@@ -739,8 +910,8 @@ const A = {
   setLevel: (d) => { settings.level = d.v; saveSettings(); render(); },
   setTimer: (d) => { settings.timer = Number(d.v); saveSettings(); render(); },
   start: () => { saveSettings(); S = newGame(); render(); },
-  quit: () => { if (confirm('Quit this game?')) { clearTimers(); S = null; render(); } },
-  home: () => { clearTimers(); S = null; render(); },
+  quit: () => { if (confirm('Quit this game?')) { clearTimers(); clearHash(); S = null; render(); } },
+  home: () => { clearTimers(); clearHash(); S = null; render(); },
   handoffGo: () => { const h = S.handoff; S.handoff = null; render(); h.then?.(); },
 
   call: (d) => {
@@ -775,6 +946,7 @@ const A = {
     D.selected = null;
     haptic();
     render();
+    stamp('RE-ROLL!');
     startPickTimer();
   },
   fEra: (d) => { S.draft.filters.era = d.v || null; render(); },
@@ -796,7 +968,7 @@ const A = {
       handoff(to, `${nm(from)} has a trade offer for you.`, () => {});
     } else {
       const ok = CPU.acceptsTrade(S.level, team(to), team(from), get, give);
-      if (ok) applySwap(from, give, get);
+      if (ok) { applySwap(from, give, get); stamp('DEAL!', 'good'); }
       T.stage = 'result';
       T.msg = ok ? `${nm(to)} accepts! ${give.name} for ${get.name}.` : `${nm(to)} declines your offer.`;
       render();
@@ -806,6 +978,7 @@ const A = {
     const T = S.trade;
     const o = T.offer;
     applySwap(o.from, o.give, o.get);
+    stamp('DEAL!', 'good');
     T.stage = 'result';
     T.msg = `Trade accepted: ${o.give.name} to ${nm(other(o.from))}, ${o.get.name} to ${nm(o.from)}.`;
     haptic();
@@ -825,7 +998,14 @@ const A = {
     S.fin.stage = 'playing';
     S.fin.note = null;
     render();
-    animateGame(g, () => { S.fin.stage = 'post'; haptic(40); render(); });
+    animateGame(g, () => {
+      S.fin.stage = 'post';
+      haptic(40);
+      render();
+      document.querySelector('.scoreboard')?.classList.add('buzz');
+      if (g.tags.includes('buzzer-beater')) stamp('BUZZER BEATER!');
+      else if (g.tags.includes('blowout')) stamp('BLOWOUT!');
+    });
   },
   skipAnim: () => { S.fin?.skip?.(); },
   simEnd: () => simToEnd(),
@@ -839,7 +1019,33 @@ const A = {
     haptic();
     nextAdjust(false);
   },
-  toResults: () => { S.screen = 'results'; render(); },
+  toResults: () => finishSeries(),
+  replayNext: () => { S.plans = replayPlansFor(S.games.length + 1); A.playGame(); },
+  replayStart: () => {
+    const C = S.challenge;
+    S.replay = true;
+    S.replayPlans = C.gamePlans;
+    S.plans = { A: { ...C.gamePlans[0].A }, B: { ...C.gamePlans[0].B } };
+    startFinals();
+  },
+  runBack: (d) => {
+    const C = S.challenge;
+    const next = challengeState(C);
+    if (d.v === 'cpu') { next.mode = 'cpu'; next.level = 'legend'; next.names = { A: C.names.A, B: 'CPU Legend' }; }
+    else next.mode = 'pvp';
+    clearHash();
+    S = next;
+    startPlans();
+  },
+  share: async () => {
+    const url = challengeURL();
+    const text = `${nm('A')} vs ${nm('B')}, ${ERA_SHORT[S.era]} Finals. Can you coach it better?`;
+    try {
+      if (navigator.share) { await navigator.share({ title: 'Time Machine Challenge', text, url }); return; }
+    } catch (e) { if (e?.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(url); toast('Challenge link copied!'); } catch { window.prompt('Copy this challenge link:', url); }
+  },
+  resetRivalry: () => { if (confirm('Reset all rivalry records on this device?')) { saveRivalry({}); render(); } },
 
   rematch: () => {
     S.seed = Sim.newSeed();
@@ -872,6 +1078,11 @@ $app.addEventListener('input', (e) => {
   } catch (e) {
     $app.innerHTML = `<div class="screen center"><h2>Couldn't load player data</h2><p>${esc(e.message)}</p><p class="hint">Opening index.html straight from a file won't work. Run <code>npx serve .</code> and open the URL it prints.</p></div>`;
     return;
+  }
+  if (location.hash.startsWith('#c=')) {
+    const C = parseChallenge(location.hash);
+    if (C) S = challengeState(C);
+    else { clearHash(); render(); toast('That challenge link is broken or out of date.'); return; }
   }
   render();
 })();

@@ -5,6 +5,9 @@ A mobile-first, head-to-head basketball draft game, and the sequel to **Time Mac
 - Play against the CPU (Easy, Normal or Legend), or pass-and-play on one phone.
 - The draft deals you random era and position slots. You get one re-roll, one veto and one trade offer.
 - Each Finals game plays out on an LED scoreboard with a recap, and you can change one strategy lever between games.
+- The rivalry record keeps an all-time head-to-head score on each phone ("Dad 7 – Son 9").
+- A challenge link packs the rosters, era, plans and seed into the URL, so anyone can replay a Finals exactly or try to out-coach it.
+- The player bank has 377 era cards for 233 players: All-NBA picks (1980–2026), Hall of Famers, the 75th Team, and Sixth Man and DPOY winners.
 
 The full design is in [SPEC.md](SPEC.md).
 
@@ -42,5 +45,12 @@ node tests/recaps.test.js
 | `js/app.js` | Screens and game flow |
 | `data/players.json` | Player era cards |
 | `tests/sim.test.js` | Sim tuning tests (Node) |
+| `tests/recaps.test.js` | Recap bank tests (Node) |
+| `tools/build-players.mjs` | Rebuilds players.json from the ratings table and checks eligibility and depth |
+| `tools/all-nba.mjs` | All-NBA history (Basketball-Reference) used for eligibility and rating checks |
+
+## Editing player ratings
+
+Ratings live in a readable table in `tools/build-players.mjs`, one line per card. Change a number, then run `node tools/build-players.mjs`. It rebuilds `data/players.json` and prints the depth report.
 
 There's no build step and no framework, just plain ES modules.
