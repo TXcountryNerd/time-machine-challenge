@@ -1,0 +1,10 @@
+{
+  "name": "time-machine-challenge",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/sim.test.js",
+    "build:players": "node tools/build-players.mjs",
+    "start": "npx serve ."
+  }
+}
