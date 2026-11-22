@@ -1,10 +1,10 @@
 // Time Machine Challenge — screens and game flow.
 // MODE → COIN → DRAFT → TRADE → GRADE → ERA → PLAN → FINALS → RESULTS
 
-import { loadPlayers } from './data.js';
-import * as Sim from './sim.js';
-import * as CPU from './cpu.js';
-import { recapFor } from './recaps.js';
+import { loadPlayers } from './data.js?v=5';
+import * as Sim from './sim.js?v=5';
+import * as CPU from './cpu.js?v=5';
+import { recapFor } from './recaps.js?v=5';
 
 const { ERAS, POSITIONS, LABELS } = Sim;
 const $app = document.getElementById('app');

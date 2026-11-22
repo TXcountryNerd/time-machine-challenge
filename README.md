@@ -49,6 +49,14 @@ node tests/recaps.test.js
 | `tools/build-players.mjs` | Rebuilds players.json from the ratings table and checks eligibility and depth |
 | `tools/all-nba.mjs` | All-NBA history (Basketball-Reference) used for eligibility and rating checks |
 
+## Releasing an update
+
+GitHub Pages lets phones cache files for about 10 minutes. Every file reference carries a version number (`?v=5`) so players get the new code together. When you change any JS, CSS or player data, bump the number everywhere before you push:
+
+```sh
+sed -i 's/?v=5/?v=6/g' index.html js/*.js
+```
+
 ## Editing player ratings
 
 Ratings live in a readable table in `tools/build-players.mjs`, one line per card. Change a number, then run `node tools/build-players.mjs`. It rebuilds `data/players.json` and prints the depth report.
