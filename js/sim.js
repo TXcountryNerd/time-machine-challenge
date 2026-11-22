@@ -358,7 +358,7 @@ export function simGame(teamA, teamB, era, plans, seed, opts = {}) {
   if (ptsA > E.ppg + 10 && ptsB > E.ppg + 10) tags.push('shootout');
   if (topA.pts >= 33 && topB.pts >= 33) tags.push('star-duel');
   if (wBox.filter((p) => p.bench).some((p) => p.pts >= 20 || p.id === wTop.id)) tags.push('bench-game');
-  if (Math.abs(eraIdx(wTop.era) - eraIdx(era)) >= 2) tags.push('era-clash');
+  if (Math.abs(eraIdx(wTop.era) - eraIdx(era)) >= 3) tags.push('era-clash');
   if (!tags.length) tags.push(margin >= 10 ? 'solid-win' : 'close-win');
 
   return {

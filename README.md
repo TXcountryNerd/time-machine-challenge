@@ -26,6 +26,7 @@ Then open the URL it prints.
 
 ```sh
 node tests/sim.test.js
+node tests/recaps.test.js
 ```
 
 ## Structure

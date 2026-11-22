@@ -547,7 +547,7 @@ function startFinals() {
 }
 function playNext() {
   const g = Sim.playGame(team('A'), team('B'), S.era, S.games, S.plans, S.seed, S.seedTeam);
-  g.recap = recapFor(g, { names: S.names, era: S.era, teams: S.teams }, S.usedRecaps);
+  g.recap = recapFor(g, { names: S.names, era: S.era, teams: S.teams, prevPlans: S.games.at(-1)?.plans }, S.usedRecaps);
   S.games.push(g);
   return g;
 }
@@ -594,7 +594,8 @@ function viewFinals() {
     const over = Sim.seriesOver(S.games);
     const top = (side) => g.top[side];
     body = `${scoreboardHTML(g, false)}
-      <div class="recap"><p class="recap-line">${esc(g.recap.line)}</p>${g.recap.pbp.map((l) => `<p class="pbp">${esc(l)}</p>`).join('')}</div>
+      <div class="recap"><p class="recap-line">${esc(g.recap.line)}</p>${g.recap.line2 ? `<p class="recap-series">${esc(g.recap.line2)}</p>` : ''}
+        ${g.recap.pbp.length ? `<div class="pbp-box"><span class="pbp-title">Quarter by quarter</span>${g.recap.pbp.map((l) => `<p class="pbp">${esc(l)}</p>`).join('')}</div>` : ''}</div>
       <div class="tops">
         <div><b>${esc(nm('A'))}</b>: ${esc(top('A').name)} ${top('A').pts} pts, ${top('A').reb} reb, ${top('A').ast} ast</div>
         <div><b>${esc(nm('B'))}</b>: ${esc(top('B').name)} ${top('B').pts} pts, ${top('B').reb} reb, ${top('B').ast} ast</div>
@@ -718,7 +719,7 @@ function viewResults() {
     <div class="mvp"><span class="tag">FINALS MVP</span><b>${esc(r.mvp.name)}</b> ${r.mvp.pts} pts · ${r.mvp.reb} reb · ${r.mvp.ast} ast</div>
     <p><b>Turning point:</b> Game ${tp.n} — ${esc(tp.recap.line)}</p>
     <h3>Game by game</h3>
-    <div class="glog">${S.games.map((g) => `<div class="glog-row"><span class="gn">G${g.n}</span><span class="gs">${g.score.A}–${g.score.B}${g.ot ? ' OT' : ''}</span><span class="gr">${esc(g.recap.line)}</span></div>`).join('')}</div>
+    <div class="glog">${S.games.map((g) => `<div class="glog-row"><span class="gn">G${g.n}</span><span class="gs">${g.score.A}–${g.score.B}${g.ot ? ' OT' : ''}</span><span class="gr">${esc(g.recap.line)}${g.recap.line2 ? ` <em>${esc(g.recap.line2)}</em>` : ''}</span></div>`).join('')}</div>
     ${gradeBlock('A')}${gradeBlock('B')}
     <h3>${esc(nm('A'))} — series averages</h3>${avgTable('A')}
     <h3>${esc(nm('B'))} — series averages</h3>${avgTable('B')}

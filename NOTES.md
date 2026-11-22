@@ -12,3 +12,4 @@ Running notes from build sessions (the locked design lives in [SPEC.md](SPEC.md)
 ## Requests
 - **Design:** make it a *super arcade* feel. Fun first, with neon glow, chunky buttons, LED scoreboard energy and punchy animations, layered on the v1 kit (hardwood, jersey cards, leather-orange buttons).
 - **At the very end:** walk through everything needed to have this on GitHub (repo, Pages, git login setup).
+- **Phase 5:** refine the visuals. The Phase 3 arcade pass works, but it needs another round of design polish (requested after the first phone playtest).

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/sim.test.js",
+    "test": "node tests/sim.test.js && node tests/recaps.test.js",
     "build:players": "node tools/build-players.mjs",
     "start": "npx serve ."
   }
