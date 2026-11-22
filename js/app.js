@@ -1,10 +1,10 @@
 // Time Machine Challenge — screens and game flow.
 // MODE → COIN → DRAFT → TRADE → GRADE → ERA → PLAN → FINALS → RESULTS
 
-import { loadPlayers } from './data.js?v=5';
-import * as Sim from './sim.js?v=5';
-import * as CPU from './cpu.js?v=5';
-import { recapFor } from './recaps.js?v=5';
+import { loadPlayers } from './data.js?v=6';
+import * as Sim from './sim.js?v=6';
+import * as CPU from './cpu.js?v=6';
+import { recapFor } from './recaps.js?v=6';
 
 const { ERAS, POSITIONS, LABELS } = Sim;
 const $app = document.getElementById('app');
@@ -310,6 +310,21 @@ function deal(side, exclude) {
   return list[Math.floor(r() * list.length)];
 }
 
+// Each pick offers only 3 random legal players: from the dealt slot, or from the
+// whole remaining pool in the 6th/7th Man rounds. Keeps rosters from getting stacked.
+const OPTIONS_PER_PICK = 3;
+function dealOptions(side) {
+  const D = S.draft;
+  const pool = legalCards(side, D.slot);
+  const r = rngFor('opts', D.pick, D.deals);
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  D.offer = pool.slice(0, OPTIONS_PER_PICK).sort((a, b) => b.ovr - a.ovr).map((c) => c.id);
+}
+function options(side) {
+  const D = S.draft;
+  return D.offer.map(card).filter((c) => !D.taken.has(c.id) && !ownsPlayer(side, c.playerId) && !D.blocked.has(c.playerId));
+}
+
 function startDraft() {
   S.draft = {
     pick: 0, deals: 0, taken: new Set(), blocked: new Set(), selected: null, slot: null, pending: null, vetoedThisPick: false,
@@ -331,6 +346,7 @@ function beginPick() {
   D.filters = { era: null, pos: null };
   if (D.pick >= 14) return finishDraft();
   D.slot = isFree() ? null : deal(picker());
+  dealOptions(picker());
   render();
   continuePick();
 }
@@ -350,8 +366,7 @@ function startPickTimer() {
     if (Date.now() >= D.deadline) {
       clearInterval(timers.tick);
       const side = picker();
-      const opts = legalCards(side, D.slot);
-      const c = (D.selected && card(D.selected)) || opts[0];
+      const c = (D.selected && card(D.selected)) || options(side)[0];
       toast(`Time! Auto-drafted ${c.name}`);
       makePick(side, c);
     }
@@ -374,7 +389,7 @@ function cpuCtx(side) {
   const oppRoster = D.rosters[opp];
   const oppEras = new Set(Object.values(oppRoster.starters).map((c) => c.era));
   return {
-    roster: D.rosters[side], slot: D.slot, options: legalCards(side, D.slot), eraControl: S.eraControl === side,
+    roster: D.rosters[side], slot: D.slot, options: options(side), eraControl: S.eraControl === side,
     oppCanUse: (c) => !ownsPlayer(opp, c.playerId) && (isFree() ? oppRoster.bench.length < 2 : !oppEras.has(c.era) && !oppRoster.starters[c.pos]),
     oppOptions: (c) => legalCards(opp, isFree() ? null : { era: c.era, pos: c.pos }, { ignoreBlocked: true }),
   };
@@ -383,11 +398,14 @@ function cpuTurn() {
   const D = S.draft;
   const side = picker();
   if (D.slot && !D.reroll[side] && !D.vetoedThisPick) {
-    const bestHere = legalCards(side, D.slot)[0];
-    const bestOpen = openCombos(side).map((c) => legalCards(side, c)[0]).filter(Boolean);
+    const bestHere = options(side)[0];
+    // What a typical re-deal would offer: roughly the best of 3 random picks from another open cell
+    const bestOpen = openCombos(side).filter((c) => c.era !== D.slot.era || c.pos !== D.slot.pos)
+      .map((c) => { const l = legalCards(side, c); return l[Math.floor(l.length / 4)]; }).filter(Boolean);
     if (CPU.wantsReroll(S.level, bestHere, bestOpen)) {
       D.reroll[side] = true;
       D.slot = deal(side, D.slot);
+      dealOptions(side);
       toast(`${nm(side)} used its re-roll`);
       stamp('RE-ROLL!');
       render();
@@ -412,7 +430,7 @@ function unplace(side, c) {
 function makePick(side, c) {
   const D = S.draft;
   clearTimers();
-  const alternatives = legalCards(side, D.slot).filter((x) => x.playerId !== c.playerId);
+  const alternatives = options(side).filter((x) => x.playerId !== c.playerId);
   place(side, c);
   haptic();
   const opp = other(side);
@@ -464,11 +482,8 @@ function viewDraft() {
   const human = isHuman(side);
   const round = Math.floor(D.pick / 2) + 1;
   const free = isFree();
-  let opts = legalCards(side, D.slot);
-  if (free) {
-    if (D.filters.era) opts = opts.filter((c) => c.era === D.filters.era);
-    if (D.filters.pos) opts = opts.filter((c) => c.pos === D.filters.pos);
-  }
+  const pending = D.pending;
+  const opts = pending ? D.offer.map(card) : options(side); // during a veto window, show the pick in context
   const slotTitle = free
     ? `<span class="deal-free">${D.pick < 12 ? '6th Man' : '7th Man'}</span><span class="deal-sub">Any era · any position</span>`
     : `<span class="deal-era era-${D.slot.era}">${ERA_SHORT[D.slot.era]}</span><span class="deal-pos">${D.slot.pos}</span>`;
@@ -484,17 +499,14 @@ function viewDraft() {
       <div class="deal-slot">${slotTitle}</div>
       ${human && S.timer ? '<div class="timer"><div id="timer-fill" class="timer-fill"></div><span id="timer-txt" class="timer-txt"></span></div>' : ''}
       ${canReroll ? '<button class="btn small ghost" data-act="reroll">↻ Re-roll slot (1 per draft)</button>' : ''}
-      ${D.vetoedThisPick ? '<p class="hint warn">Pick vetoed — choose again from the same slot.</p>' : ''}
+      ${D.vetoedThisPick ? '<p class="hint warn">Pick vetoed. Choose again from your remaining options.</p>' : ''}
     </div>
-    ${free ? `<div class="filters">
-      <div class="chips scroll">${chip('fEra', '', 'All eras', !D.filters.era)}${ERAS.map((e) => chip('fEra', e, ERA_SHORT[e], D.filters.era === e)).join('')}</div>
-      <div class="chips scroll">${chip('fPos', '', 'All pos', !D.filters.pos)}${POSITIONS.map((p) => chip('fPos', p, p, D.filters.pos === p)).join('')}</div>
-    </div>` : ''}
-    <div class="cards">${opts.length ? opts.map((c) => cardHTML(c, { act: human && !pend ? 'select' : '', sel: c.id === D.selected, disabled: !human || !!pend })).join('') : '<p class="hint">No players match those filters.</p>'}</div>
+    <p class="offer-note">${opts.length} random option${opts.length === 1 ? '' : 's'} this pick${free ? ', from any era and position' : ''}. Choose wisely.</p>
+    <div class="cards">${opts.map((c) => cardHTML(c, { act: human && !pend ? 'select' : '', sel: c.id === (pend ? pend.card.id : D.selected), disabled: !human || !!pend })).join('')}</div>
     ${human && sel && !pend ? `<div class="dock"><button class="btn primary big" data-act="draftSel">Draft ${esc(sel.name)}</button></div>` : ''}
     ${pend ? `<div class="veto-sheet">
       <p><b>${esc(nm(other(pend.side)))}</b>: veto ${esc(nm(pend.side))}'s pick of <b>${esc(pend.card.name)}</b>? <span id="veto-left" class="veto-left">6s</span></p>
-      <p class="hint">One veto per draft. They pick again from the same slot.</p>
+      <p class="hint">One veto per draft. They pick again from their remaining options.</p>
       <div class="row2"><button class="btn danger" data-act="veto">✋ Veto</button><button class="btn" data-act="allow">Let it ride</button></div>
     </div>` : ''}
   </div>`;
@@ -694,6 +706,21 @@ function scoreboardHTML(g, live) {
     <table class="qtable"><tr><th></th>${head}</tr><tr><td>${esc(lastName(nm('A')))}</td>${row(0, 'A')}</tr><tr><td>${esc(lastName(nm('B')))}</td>${row(1, 'B')}</tr></table>
   </div>`;
 }
+/** Per-player stat line for one team in one game (starters, then bench). */
+function boxScoreHTML(g, side) {
+  const won = g.winner === side;
+  const topId = g.top[side].id;
+  const rows = g.box[side].map((p) => `<tr class="${p.id === topId ? 'top' : ''}">
+      <td><span class="bx-name">${esc(p.name)}</span> <span class="era-badge era-${p.era}">${ERA_SHORT[p.era]}</span>${p.bench ? ' <small>BENCH</small>' : ''}</td>
+      <td>${p.min}</td><td class="bx-pts">${p.pts}</td><td>${p.reb}</td><td>${p.ast}</td></tr>`).join('');
+  const tot = g.box[side].reduce((s, p) => ({ min: s.min + p.min, pts: s.pts + p.pts, reb: s.reb + p.reb, ast: s.ast + p.ast }), { min: 0, pts: 0, reb: 0, ast: 0 });
+  return `<div class="boxscore ${won ? 'won' : ''}">
+    <div class="bx-head"><span>${esc(nm(side))}</span><span class="bx-score">${g.score[side]}${won ? ' · W' : ' · L'}</span></div>
+    <table class="stats"><tr><th>Player</th><th>MIN</th><th>PTS</th><th>REB</th><th>AST</th></tr>${rows}
+      <tr class="bx-tot"><td>Team</td><td>${tot.min}</td><td>${tot.pts}</td><td>${tot.reb}</td><td>${tot.ast}</td></tr></table>
+  </div>`;
+}
+
 function viewFinals() {
   const F = S.fin;
   const g = S.games.at(-1);
@@ -709,14 +736,11 @@ function viewFinals() {
     body = `${scoreboardHTML(g, true)}<p class="hint center-t">Tap the scoreboard to skip</p>`;
   } else if (F.stage === 'post') {
     const over = Sim.seriesOver(S.games);
-    const top = (side) => g.top[side];
     body = `${scoreboardHTML(g, false)}
       <div class="recap"><p class="recap-line">${esc(g.recap.line)}</p>${g.recap.line2 ? `<p class="recap-series">${esc(g.recap.line2)}</p>` : ''}
         ${g.recap.pbp.length ? `<div class="pbp-box"><span class="pbp-title">Quarter by quarter</span>${g.recap.pbp.map((l) => `<p class="pbp">${esc(l)}</p>`).join('')}</div>` : ''}</div>
-      <div class="tops">
-        <div><b>${esc(nm('A'))}</b>: ${esc(top('A').name)} ${top('A').pts} pts, ${top('A').reb} reb, ${top('A').ast} ast</div>
-        <div><b>${esc(nm('B'))}</b>: ${esc(top('B').name)} ${top('B').pts} pts, ${top('B').reb} reb, ${top('B').ast} ast</div>
-      </div>
+      <h3>Box score · Game ${g.n}</h3>
+      ${boxScoreHTML(g, 'A')}${boxScoreHTML(g, 'B')}
       <details class="scout"><summary>Scouting report — plans used in Game ${g.n}</summary>
         <p><b>${esc(nm('A'))}</b>: ${planSummary(team('A'), g.plans.A)}</p><p><b>${esc(nm('B'))}</b>: ${planSummary(team('B'), g.plans.B)}</p></details>
       <div class="dock ${over ? '' : 'row2'}">${over
@@ -858,7 +882,9 @@ function viewResults() {
     <div class="mvp"><span class="tag">FINALS MVP</span><b>${esc(r.mvp.name)}</b> ${r.mvp.pts} pts · ${r.mvp.reb} reb · ${r.mvp.ast} ast</div>
     <p><b>Turning point:</b> Game ${tp.n} — ${esc(tp.recap.line)}</p>
     <h3>Game by game</h3>
-    <div class="glog">${S.games.map((g) => `<div class="glog-row"><span class="gn">G${g.n}</span><span class="gs">${g.score.A}–${g.score.B}${g.ot ? ' OT' : ''}</span><span class="gr">${esc(g.recap.line)}${g.recap.line2 ? ` <em>${esc(g.recap.line2)}</em>` : ''}</span></div>`).join('')}</div>
+    <p class="hint">Tap a game to see its box score.</p>
+    <div class="glog">${S.games.map((g) => `<details class="glog-game"><summary class="glog-row"><span class="gn">G${g.n}</span><span class="gs">${g.score.A}–${g.score.B}${g.ot ? ' OT' : ''}</span><span class="gr">${esc(g.recap.line)}${g.recap.line2 ? ` <em>${esc(g.recap.line2)}</em>` : ''}</span></summary>
+      ${boxScoreHTML(g, 'A')}${boxScoreHTML(g, 'B')}</details>`).join('')}</div>
     ${gradeBlock('A')}${gradeBlock('B')}
     <h3>${esc(nm('A'))} — series averages</h3>${avgTable('A')}
     <h3>${esc(nm('B'))} — series averages</h3>${avgTable('B')}
@@ -943,14 +969,13 @@ const A = {
     const side = picker();
     D.reroll[side] = true;
     D.slot = deal(side, D.slot);
+    dealOptions(side);
     D.selected = null;
     haptic();
     render();
     stamp('RE-ROLL!');
     startPickTimer();
   },
-  fEra: (d) => { S.draft.filters.era = d.v || null; render(); },
-  fPos: (d) => { S.draft.filters.pos = d.v || null; render(); },
   veto: () => { const p = S.draft.pending; if (p) { haptic(60); doVeto(other(p.side), p.side, p.card); } },
   allow: () => { if (S.draft.pending) advancePick(); },
 

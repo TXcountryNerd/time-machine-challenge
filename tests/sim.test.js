@@ -25,8 +25,14 @@ function mockDraft(rng, skill) {
   const legalOpen = (t) => t.open.filter(([e, p]) => !t.usedE.has(e) && !t.usedP.has(p));
   const avail = (t, filter) => cards.filter((c) => !taken.has(c.id) && !t.players.has(c.playerId) && filter(c)).sort((a, b) => b.ovr - a.ovr);
   const take = (t, c) => { taken.add(c.id); t.players.add(c.playerId); };
-  // pick quality: skill[i] = how deep in the list the GM might reach (1 = always best)
-  const choose = (list, depth) => list[Math.min(list.length - 1, Math.floor(rng() * depth))];
+  // Game rule: each pick offers 3 random legal players. skill[i] = 1 always takes the best
+  // of the three; higher values sometimes take a worse one (fit, misclicks, kids' favorites).
+  const choose = (list, skillLevel) => {
+    const pool = [...list];
+    for (let k = pool.length - 1; k > 0; k--) { const j = Math.floor(rng() * (k + 1)); [pool[k], pool[j]] = [pool[j], pool[k]]; }
+    const offer = pool.slice(0, 3).sort((a, b) => b.ovr - a.ovr);
+    return rng() < 1 / skillLevel ? offer[0] : offer[Math.floor(rng() * offer.length)];
+  };
   for (let r = 0; r < 5; r++) {
     for (let i = 0; i < 2; i++) {
       const t = teams[i];
@@ -38,7 +44,7 @@ function mockDraft(rng, skill) {
     }
   }
   for (let r = 0; r < 2; r++) for (let i = 0; i < 2; i++) {
-    const c = choose(avail(teams[i], () => true), skill[i] * 3);
+    const c = choose(avail(teams[i], () => true), skill[i]);
     teams[i].bench.push(c); take(teams[i], c);
   }
   return teams.map((t, i) => ({ name: `Team ${i + 1}`, starters: t.starters, bench: t.bench }));

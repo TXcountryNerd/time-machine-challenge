@@ -99,9 +99,9 @@ const findCard = (team, id) => allPlayers(team).find((c) => c.id === id);
 const ROT_WEIGHTS = {
   starters: [0.17, 0.17, 0.17, 0.17, 0.17, 0.1, 0.05],
   balanced: [0.155, 0.155, 0.155, 0.155, 0.155, 0.14, 0.085],
-  deep: [0.14, 0.14, 0.14, 0.14, 0.14, 0.17, 0.13],
+  deep: [0.148, 0.148, 0.148, 0.148, 0.148, 0.15, 0.11],
 };
-export const minutesFor = (rotation) => ROT_WEIGHTS[rotation].map((w) => Math.round(w * 240));
+export const minutesFor = (rotation) => allocate(240, ROT_WEIGHTS[rotation]); // sums to exactly 240
 
 export function defaultPlan(team) {
   const s = starters(team);
@@ -521,8 +521,8 @@ export function bestPlan(team, opp, E, oppPlan, start = defaultPlan(team)) {
 }
 
 // ---------- Draft grade ----------
-// Cutoffs from the rosterScore distribution of 6,000 mock-drafted rosters (p95, p90, p80 ...).
-const DRAFT_CUTOFFS = [[96.1, 'A+'], [95.6, 'A'], [95.1, 'A-'], [94.5, 'B+'], [94.0, 'B'], [93.4, 'B-'], [92.8, 'C+'], [92.3, 'C'], [91.8, 'C-'], [90.9, 'D']];
+// Cutoffs from the rosterScore distribution of 8,000 mock rosters drafted with the 3-random-options rule (p95, p90, p80 ...).
+const DRAFT_CUTOFFS = [[92.0, 'A+'], [91.3, 'A'], [90.4, 'A-'], [89.5, 'B+'], [88.6, 'B'], [87.8, 'B-'], [86.8, 'C+'], [85.7, 'C'], [84.9, 'C-'], [83.2, 'D']];
 export function draftGrade(team) {
   const score = rosterScore(team);
   const grade = (DRAFT_CUTOFFS.find(([c]) => score >= c) ?? [0, 'F'])[1];

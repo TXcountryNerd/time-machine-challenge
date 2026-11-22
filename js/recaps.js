@@ -6,7 +6,7 @@
 //   ctx:  { names: { A, B }, era, teams: { A, B } }
 //   used: Set of template ids already used in this series (mutated)
 
-import { makeRng, LEVERS } from './sim.js?v=5';
+import { makeRng, LEVERS } from './sim.js?v=6';
 
 // ---------- Template bank ----------
 // Placeholders: {W} {L} winner/loser team, {Wp} {Lp} possessives, {ws} {ls} scores, {margin}, {n} game no.,

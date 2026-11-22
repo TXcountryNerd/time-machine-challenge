@@ -4,7 +4,7 @@ export const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
 
 let cache = null;
 
-export async function loadPlayers(url = new URL('../data/players.json?v=5', import.meta.url)) {
+export async function loadPlayers(url = new URL('../data/players.json?v=6', import.meta.url)) {
   if (cache) return cache;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to load players.json (${res.status})`);

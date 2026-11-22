@@ -420,3 +420,20 @@ body::before {
 .challenge-head h2 { font-size: 26px; margin-top: 8px; }
 .vs-x { font-family: var(--pixel); font-size: 12px; color: var(--neon-m); vertical-align: middle; margin: 0 6px; }
 .sticky-rosters.static { position: static; margin: 8px 0; }
+
+/* ---------- 3-option draft + box scores ---------- */
+.offer-note { margin: 10px 16px 0; font-family: var(--pixel); font-size: 8px; line-height: 1.7; color: var(--neon-y); text-align: center; }
+.boxscore { margin: 10px 0; padding: 10px; border-radius: var(--radius); background: var(--panel); border: 2px solid var(--line); }
+.boxscore.won { border-color: color-mix(in srgb, var(--neon-g) 55%, var(--line)); box-shadow: 0 0 14px rgba(125,255,74,.15); }
+.bx-head { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--display); font-size: 15px; margin-bottom: 4px; }
+.bx-score { font-family: var(--led-font); font-weight: 900; color: var(--led-amber); text-shadow: 0 0 8px rgba(255,179,0,.5); }
+.boxscore .stats td:first-child { max-width: 170px; }
+.bx-name { font-weight: 700; }
+.boxscore tr.top td { background: rgba(255,225,77,.08); }
+.boxscore tr.top .bx-pts { color: var(--neon-y); text-shadow: 0 0 8px rgba(255,225,77,.6); }
+.boxscore tr.bx-tot td { font-weight: 800; border-bottom: 0; border-top: 2px solid var(--line); color: var(--muted); }
+.boxscore small { font-family: var(--pixel); font-size: 6px; color: var(--muted); opacity: 1; }
+.glog-game { border-radius: 10px; }
+.glog-game > summary { list-style: none; cursor: pointer; min-height: 44px; }
+.glog-game > summary::-webkit-details-marker { display: none; }
+.glog-game[open] > summary { outline: 2px solid var(--neon-c); }

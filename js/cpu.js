@@ -7,7 +7,7 @@
 import {
   ERAS, POSITIONS, eraAdapt, strength, rosterScore, talent, chemistry, defaultPlan, bestPlan,
   OFFENSES, DEFENSES, TEMPOS, ROTATIONS,
-} from './sim.js?v=5';
+} from './sim.js?v=6';
 
 export const LEVELS = ['easy', 'normal', 'legend'];
 export const LEVEL_LABEL = { easy: 'Easy', normal: 'Normal', legend: 'Legend' };
